@@ -1,4 +1,5 @@
 from dolfin import *
+from dolfin_adjoint import *
 import numpy as np
 
 
@@ -17,13 +18,13 @@ def normalize_angle(angle):
 class JetBCValue(Expression):
     '''
     Value of this expression is a vector field v(x, y) = A(theta)*e_r
-    where A is the amplitude function of the polar angle and e_r is radial 
-    unit vector. The field is modulated such that 
-    
+    where A is the amplitude function of the polar angle and e_r is radial
+    unit vector. The field is modulated such that
+
     1) at theta = theta0 \pm width/2 A is 0
     2) \int_{J} v.n dl = Q
 
-    Here theta0 is the (angular) position of the jet on the cylinder, width 
+    Here theta0 is the (angular) position of the jet on the cylinder, width
     is its angular width and finaly Q is the desired flux thought the jet.
     All angles are in degrees.
     '''
@@ -31,10 +32,10 @@ class JetBCValue(Expression):
         assert width > 0 and radius > 0 # Sanity. Allow negative Q for suction
         theta0 = np.deg2rad(theta0)
         assert theta0 >= 0  # As coming from deg to rad
-        
+
         self.radius = radius
         self.width = np.deg2rad(width)
-        # From deg2rad it is possible that theta0 > pi. Below we habe atan2 so 
+        # From deg2rad it is possible that theta0 > pi. Below we habe atan2 so
         # shift to -pi, pi
         self.theta0 = normalize_angle(theta0)
 
@@ -50,16 +51,60 @@ class JetBCValue(Expression):
 
     def amplitude(self, x):
         theta = np.arctan2(x[1], x[0])
-                
-        # NOTE: motivation for below is cos(pi*(theta0 \pm width)/w) = 0 to 
+
+        # NOTE: motivation for below is cos(pi*(theta0 \pm width)/w) = 0 to
         # smoothly join the no slip.
         scale = self.Q/(2.*self.width*self.radius**2/pi)
 
-        return scale*cos(pi*(theta - self.theta0)/self.width)
+        if abs(theta - self.theta0) < np.deg2rad(self.width):
+            return scale*cos(pi*(theta - self.theta0)/self.width)
+        elif abs(theta - self.theta0 + pi) < np.deg2rad(self.width):
+            return -scale * cos(pi * (theta - self.theta0) / self.width)
+        else:
+            return 0
 
     # This is a vector field in 2d
     def value_shape(self):
         return (2, )
+
+
+class JetBCValueDerivative(Expression):
+    def __init__(self, radius, width, theta0, **kwargs):
+        assert width > 0 and radius > 0  # Sanity. Allow negative Q for suction
+        theta0 = np.deg2rad(theta0)
+        assert theta0 >= 0  # As coming from deg to rad
+
+        self.radius = radius
+        self.width = np.deg2rad(width)
+        # From deg2rad it is possible that theta0 > pi. Below we habe atan2 so
+        # shift to -pi, pi
+        self.theta0 = normalize_angle(theta0)
+
+    def eval(self, values, x):
+        A = self.amplitude(x)
+        xC = 0.
+        yC = 0.
+
+        values[0] = A * (x[0] - xC)
+        values[1] = A * (x[1] - yC)
+
+    def amplitude(self, x):
+        theta = np.arctan2(x[1], x[0])
+
+        # NOTE: motivation for below is cos(pi*(theta0 \pm width)/w) = 0 to
+        # smoothly join the no slip.
+        scale = 1.0 / (2. * self.width * self.radius ** 2 / pi)
+
+        if abs(theta - self.theta0) < np.deg2rad(self.width):
+            return scale*cos(pi*(theta - self.theta0)/self.width)
+        elif abs(theta - self.theta0 + pi) < np.deg2rad(self.width):
+            return -scale * cos(pi * (theta - self.theta0) / self.width)
+        else:
+            return 0
+
+    # This is a vector field in 2d
+    def value_shape(self):
+        return (2,)
 
 
 # ------------------------------------------------------------------------------
@@ -122,7 +167,7 @@ if __name__ == '__main__':
     fW = Function(W)
 
     tagged_positions = zip(range(first_jet, first_jet + njets), positions)
-    print tagged_positions
+    print(tagged_positions)
     k = 0
     for tag, theta0 in tagged_positions:
         k += 1
@@ -143,7 +188,7 @@ if __name__ == '__main__':
         # Outer normal of the cylinder
         n = as_vector((x, y))/Constant(radius)
         
-        print theta0, tag#abs(assemble(dot(v, n)*dx) - 2*tag), assemble(1*dx(domain=mesh))
+        print(theta0, tag)#abs(assemble(dot(v, n)*dx) - 2*tag), assemble(1*dx(domain=mesh))
     
         # For visual check
         f.rename('f', '0')
